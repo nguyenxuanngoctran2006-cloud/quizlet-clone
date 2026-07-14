@@ -4,7 +4,8 @@ import {
   getAllStudySets, 
   getStudySetById, 
   updateStudySet, 
-  deleteStudySet 
+  deleteStudySet,
+  importFlashcards // Import hàm mới
 } from '../controllers/studySetController.js';
 
 const router = Router();
@@ -12,7 +13,10 @@ const router = Router();
 router.post('/', createStudySet);
 router.get('/', getAllStudySets);
 router.get('/:id', getStudySetById);
-router.put('/:id', updateStudySet);      // PUT http://localhost:5000/api/study-sets/1 (Sửa bộ thẻ có id = 1)
-router.delete('/:id', deleteStudySet);   // DELETE http://localhost:5000/api/study-sets/1 (Xóa bộ thẻ có id = 1)
+router.put('/:id', updateStudySet);
+router.delete('/:id', deleteStudySet);
+
+// Đường dẫn API Import hàng loạt: POST http://localhost:5000/api/study-sets/:id/import
+router.post('/:id/import', importFlashcards);
 
 export default router;

@@ -109,3 +109,43 @@ export const deleteStudySet = async (req: Request, res: Response): Promise<void>
     res.status(500).json({ error: error.message });
   }
 };
+
+// 6. Import hàng loạt Flashcards vào một Bộ học phần (Bulk Insert)
+export const importFlashcards = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params; // id của Bộ học phần (study_set_id)
+    const { flashcards } = req.body; // Mảng chứa danh sách từ vựng: [{term: 'Hello', definition: 'Xin chào'}, ...]
+
+    if (!flashcards || !Array.isArray(flashcards) || flashcards.length === 0) {
+      res.status(400).json({ error: 'Danh sách thẻ ghi nhớ không hợp lệ hoặc trống!' });
+      return;
+    }
+
+    // Xây dựng câu lệnh SQL Bulk Insert động để tối ưu hiệu năng
+    // Dạng mong muốn: INSERT INTO flashcards (study_set_id, term, definition) VALUES ($1, $2, $3), ($4, $5, $6)...
+    const values: any[] = [];
+    const valueStrings: string[] = [];
+    let count = 1;
+
+    for (const card of flashcards) {
+      valueStrings.push(`($${count}, $${count + 1}, $${count + 2})`);
+      values.push(id, card.term, card.definition);
+      count += 3;
+    }
+
+    const queryString = `
+      INSERT INTO flashcards (study_set_id, term, definition) 
+      VALUES ${valueStrings.join(', ')} 
+      RETURNING *
+    `;
+
+    const result = await pool.query(queryString, values);
+
+    res.status(201).json({
+      message: `Đã import thành công ${result.rowCount} thẻ ghi nhớ vào bộ học phần!`,
+      data: result.rows,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
