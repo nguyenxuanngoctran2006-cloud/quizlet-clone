@@ -1,13 +1,17 @@
 import express, { Request, Response } from 'express';
-import pool from './config/db.js'; // Đường dẫn tới file db vừa tạo
+import pool from './config/db.js';
+import studySetRoutes from './routes/studySetRoutes.js'; // Import routes mới
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 
+// Sử dụng Routes cho cấu trúc /api/study-sets
+app.use('/api/study-sets', studySetRoutes);
+
 app.get('/', (req: Request, res: Response) => {
-  res.send('Hello World! Quizlet Backend kết nối Supabase thành công.');
+  res.send('Hello World! Quizlet Backend đã sẵn sàng API.');
 });
 
 app.listen(PORT, () => {
