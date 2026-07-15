@@ -16,6 +16,8 @@ interface Flashcard {
 }
 
 function App() {
+  // State quản lý hiệu ứng chờ AI xử lý
+  const [isAiProcessing, setIsAiProcessing] = useState<boolean>(false);
   const [studySets, setStudySets] = useState<StudySet[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [showForm, setShowForm] = useState<boolean>(false);
@@ -93,32 +95,104 @@ function App() {
     axios.post('http://localhost:5000/api/study-sets', { title, description })
       .then(() => { setTitle(''); setDescription(''); setShowForm(false); fetchStudySets(); });
   };
+// Hàm xử lý đọc cả file CSV và TXT gửi lên Backend
+  const handleImportFile = () => {
+    if (!csvFile || !selectedSet) return alert('Vui lòng chọn file trước!');
 
-  // Hàm xử lý đọc file CSV và gửi lên Backend Bulk Insert
-  const handleImportCSV = () => {
-    if (!csvFile || !selectedSet) return alert('Vui lòng chọn file CSV trước!');
+    const fileExtension = csvFile.name.split('.').pop()?.toLowerCase();
 
-    // Dùng PapaParse để phân tích file
-    Papa.parse(csvFile, {
-      header: true, // Tự động lấy dòng đầu làm key (term, definition)
-      skipEmptyLines: true,
-      complete: function (results) {
-        const parsedData = results.data; // Mảng dữ liệu [{term: '...', definition: '...'}, ...]
+    // THỬ NGHIỆM 1: XỬ LÝ FILE CSV
+    if (fileExtension === 'csv') {
+      Papa.parse(csvFile, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function (results) {
+          const parsedData = results.data;
+          sendDataToBackend(parsedData);
+        }
+      });
+    } 
+    // THỬ NGHIỆM 2: XỬ LÝ FILE TXT
+    else if (fileExtension === 'txt') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        const lines = text.split('\n');
         
-        // Gọi API Backend đã làm ở Giai đoạn 1
-        axios.post(`http://localhost:5000/api/study-sets/${selectedSet.id}/import`, {
-          flashcards: parsedData
-        })
-        .then((res) => {
-          alert(res.data.message);
-          setCsvFile(null);
-          fetchCardDetails(selectedSet.id); // Tải lại danh sách từ mới lên màn hình
-        })
-        .catch((err) => {
-          console.error(err);
-          alert('Lỗi import dữ liệu. Hãy kiểm tra định dạng file!');
-        });
+        // Tách các dòng qua dấu gạch ngang "-"
+        const parsedData = lines
+          .map((line) => {
+            const parts = line.split('-');
+            if (parts.length >= 2) {
+              return {
+                term: parts[0]?.trim() || '',
+                definition: parts.slice(1).join('-').trim() || '' // Ghép các phần còn lại nếu định nghĩa có chứa dấu "-"
+              };
+            }
+            return null;
+          })
+          .filter((card): card is { term: string; definition: string } => card !== null && card.term !== '' && card.definition !== '');
+
+        if (parsedData.length === 0) {
+          return alert('Không tìm thấy từ vựng hợp lệ trong file TXT! Định dạng chuẩn: "Từ - Định nghĩa"');
+        }
+        
+        sendDataToBackend(parsedData);
+      };
+      reader.readAsText(csvFile);
+    } else {
+      alert('Định dạng file không hỗ trợ! Vui lòng chọn file .csv hoặc .txt');
+    }
+  };
+
+  // Hàm phụ để gửi dữ liệu lên API Backend (Tránh lặp code)
+  const sendDataToBackend = (data: any[]) => {
+    if (!selectedSet) return;
+    axios.post(`http://localhost:5000/api/study-sets/${selectedSet.id}/import`, {
+      flashcards: data
+    })
+    .then((res) => {
+      alert(res.data.message);
+      setCsvFile(null);
+      fetchCardDetails(selectedSet.id); // Load lại danh sách từ mới
+    })
+    .catch((err) => {
+      console.error(err);
+      alert('Lỗi import dữ liệu. Hãy kiểm tra lại nội dung file!');
+    });
+  };
+
+  // Hàm gửi file PDF hoặc TXT lên cho Gemini AI tự động bóc tách từ vựng
+  const handleImportWithAI = () => {
+    if (!csvFile || !selectedSet) return alert('Vui lòng chọn file trước!');
+
+    const fileExtension = csvFile.name.split('.').pop()?.toLowerCase();
+    if (fileExtension !== 'pdf' && fileExtension !== 'txt') {
+      return alert('Tính năng AI Import chỉ hỗ trợ file định dạng .pdf hoặc .txt!');
+    }
+
+    // Bật hiệu ứng đang xử lý
+    setIsAiProcessing(true);
+
+    // Sử dụng FormData để gửi file dạng Binary (Multipart Form Data) lên Backend
+    const formData = new FormData();
+    formData.append('doc', csvFile); // Key này phải khớp với upload.single('doc') ở Backend Route
+
+    axios.post(`http://localhost:5000/api/study-sets/${selectedSet.id}/import-ai`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
       }
+    })
+    .then((res) => {
+      setIsAiProcessing(false);
+      alert(res.data.message);
+      setCsvFile(null);
+      fetchCardDetails(selectedSet.id); // Tải lại danh sách thẻ mới do AI tạo ra
+    })
+    .catch((err) => {
+      setIsAiProcessing(false);
+      console.error(err);
+      alert(err.response?.data?.error || 'Có lỗi xảy ra trong quá trình AI phân tích file!');
     });
   };
 
@@ -139,31 +213,57 @@ function App() {
           <h2 style={{ fontSize: '28px', color: '#303545', marginBottom: '10px' }}>{selectedSet.title}</h2>
           <p style={{ color: '#686c7d', marginBottom: '30px' }}>{selectedSet.description || 'Không có mô tả.'}</p>
 
-          {/* Vùng chức năng Import File CSV */}
+         {/* Vùng chức năng Import File nâng cấp hỗ trợ AI */}
           <div style={{ 
-            backgroundColor: '#fff', padding: '20px', borderRadius: '12px', 
-            marginBottom: '40px', display: 'flex', justifyContent: 'center', 
-            alignItems: 'center', gap: '15px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+            backgroundColor: '#fff', padding: '24px', borderRadius: '12px', 
+            marginBottom: '40px', display: 'flex', flexDirection: 'column', 
+            alignItems: 'center', gap: '15px', boxShadow: '0 4px 12px rgba(0,0,0,0.02)',
             border: '1px solid #e6e8eb'
           }}>
-            <span style={{ fontWeight: '600', fontSize: '14px', color: '#4f566b' }}>📥 Nhập từ vựng nhanh:</span>
-            <input 
-              type="file" 
-              accept=".csv"
-              onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-              style={{ fontSize: '14px' }}
-            />
-            <button 
-              onClick={handleImportCSV}
-              style={{
-                backgroundColor: '#3ccfcf', color: '#fff', border: 'none', 
-                padding: '8px 16px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer'
-              }}
-            >
-              Import File
-            </button>
-          </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontWeight: '700', fontSize: '15px', color: '#303545' }}>📥 Nhập từ vựng thông minh:</span>
+              <input 
+                type="file" 
+                accept=".csv, .txt, .pdf" // Chấp nhận thêm file PDF
+                disabled={isAiProcessing}
+                onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                style={{ fontSize: '14px', cursor: 'pointer' }}
+              />
+            </div>
 
+            <div style={{ display: 'flex', gap: '12px' }}>
+              {/* Nút Import thông thường */}
+              <button 
+                onClick={handleImportFile}
+                disabled={isAiProcessing}
+                style={{
+                  backgroundColor: '#f6f7fb', color: '#303545', border: '1px solid #dbdde2', 
+                  padding: '10px 20px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                Import Thường (CSV/TXT)
+              </button>
+
+              {/* Nút Import bằng AI */}
+              <button 
+                onClick={handleImportWithAI}
+                disabled={isAiProcessing}
+                style={{
+                  backgroundColor: '#4255ff', color: '#fff', border: 'none', 
+                  padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer',
+                  fontSize: '14px', boxShadow: '0 4px 8px rgba(66, 85, 255, 0.25)',
+                  display: 'flex', alignItems: 'center', gap: '8px'
+                }}
+              >
+                {isAiProcessing ? '🤖 AI đang quét tài liệu...' : '🤖 AI Import (PDF/TXT)'}
+              </button>
+            </div>
+            <span style={{ fontSize: '12px', color: '#939bb4' }}>
+              💡 Mẹo: Dùng <b>AI Import</b> để tải lên tài liệu học tập PDF, AI sẽ tự động đọc hiểu và nhặt từ vựng giải nghĩa cho bạn!
+            </span>
+          </div>
+          
           {cards.length === 0 ? (
             <div style={{ backgroundColor: '#fff', padding: '40px', borderRadius: '12px', border: '2px dashed #dbdde2' }}>
               <p style={{ color: '#686c7d', margin: 0 }}>Bộ thẻ này chưa có từ vựng nào. Bạn hãy chọn file CSV ở trên để import nhé!</p>
@@ -253,7 +353,7 @@ function App() {
             </div>
             <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', fontWeight: '600', marginBottom: '5px' }}>Mô tả (Không bắt buộc)</label>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder='Nhập mô tả ngắn gọn...' style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #dbdde2', boxSizing: 'border-box', height: '60px' }} />
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder='Nhập mô tả ngắn gọn...' style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #dbdde2', boxSizing: 'border-box', height: '80px' }} />
             </div>
             <button type="submit" style={{ backgroundColor: '#3ccfcf', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer' }}>Lưu bộ thẻ</button>
           </form>
