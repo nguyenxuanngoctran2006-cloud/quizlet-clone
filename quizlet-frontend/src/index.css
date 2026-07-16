@@ -35,6 +35,8 @@ body {
 /* Định dạng chung cho 2 mặt */
 .flashcard-front, .flashcard-back {
   position: absolute;
+  top: 0;   /* 🌟 Thêm dòng này để ép lên sát mép trên */
+  left: 0;  /* 🌟 Thêm dòng này để ép lên sát mép trái */
   width: 100%;
   height: 100%;
   backface-visibility: hidden;
