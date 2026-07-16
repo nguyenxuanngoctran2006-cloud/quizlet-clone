@@ -1,4 +1,5 @@
-import { readPdfText } from 'pdf-text-reader'; // Thư viện ESM chuẩn, dọn sạch hoàn toàn gạch đỏ!
+import { readPdfText } from 'pdf-text-reader';
+import Groq from 'groq-sdk';
 import fs from 'fs';
 import { Request, Response } from 'express';
 import pool from '../config/db.js';
@@ -131,86 +132,86 @@ export const importFlashcardsWithAI = async (req: Request, res: Response): Promi
       return;
     }
 
-    // Đọc trực tiếp chữ từ file PDF bằng thư viện ESM mới
+    // Bước 1: Đọc text thô trực tiếp từ PDF bằng thư viện offline local
     const textContent = await readPdfText({ filePath: file.path });
 
-    if (!textContent) {
-      res.status(400).json({ error: 'Không thể đọc được nội dung từ file PDF này!' });
+    if (!textContent || !textContent.trim()) {
+      res.status(400).json({ error: 'Không thể bóc tách nội dung chữ từ file PDF này!' });
       fs.unlinkSync(file.path);
       return;
     }
 
-    // Tách dòng và chỉ giữ lại các dòng có dữ liệu
-    const lines: string[] = textContent.split('\n').map((line: string) => line.trim()).filter(Boolean);
-    const flashcards: { term: string; definition: string }[] = [];
+    // Bước 2: Khởi tạo Groq Client
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    let tempTerm = '';
-    let tempDefinition = '';
+    // Bước 3: Gửi text thô lên model văn bản Llama 3.3 70B siêu ổn định
+    const chatCompletion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile", // Model text chính thức cực mạnh và ổn định của Groq
+      messages: [
+        {
+          role: "user",
+          content: `Bạn là một trợ lý ảo phân tích văn bản học tập thông minh. 
+Nhiệm vụ của bạn là đọc đoạn văn bản thô được bóc tách từ file PDF dưới đây. Đoạn văn bản này có thể chứa danh sách từ vựng được sắp xếp theo dạng lưới, hàng cột lộn xộn hoặc phân tách bởi dấu gạch ngang.
+Hãy tìm kiếm, dịch thuật (nếu cần) và nhóm toàn bộ các cặp thuật ngữ/từ vựng cùng định nghĩa/nghĩa tiếng Việt tương ứng của chúng.
 
-    for (const line of lines) {
-      const currentLine = line.trim();
-      if (!currentLine) continue;
+Yêu cầu đầu ra bắt buộc: Trả về một chuỗi định dạng JSON thuần túy, là một mảng các đối tượng chứa "term" (Từ vựng chính) và "definition" (Định nghĩa/Ý nghĩa tiếng Việt).
+Không giải thích gì thêm, không bọc trong markdown \`\`\`json.
+Định dạng mẫu: [{"term": "sleep", "definition": "ngủ"}, {"term": "桜 (さくら)", "definition": "Hoa anh đào"}]
 
-      // 1. Phân tách linh hoạt: Hỗ trợ mọi loại dấu gạch ngang bao gồm gạch ngắn (-), gạch dài (–, —) hoặc dấu hai chấm (:)
-      const separatorMatch = currentLine.match(/[-–—:]/);
-      
-      if (separatorMatch && separatorMatch.index !== undefined) {
-        const separatorIndex = separatorMatch.index;
-        const term = currentLine.substring(0, separatorIndex).trim();
-        const def = currentLine.substring(separatorIndex + 1).trim();
-        if (term && def) {
-          flashcards.push({ term, definition: def });
+Nội dung văn bản PDF cần phân tích:
+${textContent}`
         }
-        continue;
-      }
+      ],
+      response_format: { type: "json_object" }
+    });
 
-      // Biểu thức chính quy phát hiện chữ Nhật (Kanji, Hiragana, Katakana)
-      const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/g.test(currentLine);
+    const aiText = chatCompletion.choices[0]?.message?.content || "";
+    
+    // Bước 4: Parse kết quả JSON trả về từ Groq AI
+    let parsedData: any;
+    try {
+      parsedData = JSON.parse(aiText.trim());
+    } catch (parseError) {
+      const cleanText = aiText.replace(/```json|```/g, '').trim();
+      parsedData = JSON.parse(cleanText);
+    }
 
-      // 2. TH ghép cặp dựa trên ngôn ngữ (Dành cho bộ thẻ Nhật - Việt dạng lưới không dấu gạch ngang)
-      if (hasJapanese) {
-        if (tempTerm) {
-          tempTerm += ` / ${currentLine}`;
-        } else {
-          tempTerm = currentLine;
-        }
-      } 
-      else {
-        // Loại bỏ tiêu đề chung của trang PDF
-        if (
-          currentLine.toUpperCase().includes("BỘ THẺ") || 
-          currentLine.toUpperCase().includes("FLASHCARD") || 
-          currentLine.toUpperCase().includes("TIẾNG NHẬT")
-        ) {
-          continue;
-        }
-
-        if (tempTerm) {
-          tempDefinition = currentLine;
-          flashcards.push({ term: tempTerm, definition: tempDefinition });
-          tempTerm = '';
-          tempDefinition = '';
-        }
+    // Lấy mảng flashcards từ JSON (Hỗ trợ cấu trúc linh hoạt từ AI)
+    let flashcards: { term: string; definition: string }[] = [];
+    if (Array.isArray(parsedData)) {
+      flashcards = parsedData;
+    } else if (parsedData && Array.isArray(parsedData.flashcards)) {
+      flashcards = parsedData.flashcards;
+    } else if (parsedData && typeof parsedData === 'object') {
+      const keys = Object.keys(parsedData);
+      const firstKey = keys[0];
+      if (firstKey && Array.isArray(parsedData[firstKey])) {
+        flashcards = parsedData[firstKey];
       }
     }
 
     if (flashcards.length === 0) {
-      res.status(400).json({ 
-        error: 'Không tìm thấy từ vựng hợp lệ! Hãy đảm bảo file PDF của bạn chứa từ vựng tiếng Nhật và nghĩa tiếng Việt tương ứng.' 
-      });
+      res.status(400).json({ error: 'AI không tìm thấy hoặc không thể định dạng được từ vựng từ tài liệu này!' });
       fs.unlinkSync(file.path);
       return;
     }
 
-    // Tiến hành Bulk Insert dữ liệu vào Supabase
+    // Bước 5: Tiến hành Bulk Insert vào database Supabase
     const values: any[] = [];
     const valueStrings: string[] = [];
     let count = 1;
 
     for (const card of flashcards) {
+      if (!card.term || !card.definition) continue;
       valueStrings.push(`($${count}, $${count + 1}, $${count + 2})`);
       values.push(id, card.term, card.definition);
       count += 3;
+    }
+
+    if (values.length === 0) {
+      res.status(400).json({ error: 'Dữ liệu thẻ sau khi lọc bị trống!' });
+      fs.unlinkSync(file.path);
+      return;
     }
 
     const queryString = `
@@ -223,7 +224,7 @@ export const importFlashcardsWithAI = async (req: Request, res: Response): Promi
     fs.unlinkSync(file.path);
 
     res.status(201).json({
-      message: `🎉 Đã quét file PDF thông minh và tự động tạo thành công ${result.rowCount} thẻ ghi nhớ!`,
+      message: `🎉 Groq AI đã chuẩn hóa văn bản thành công và tạo ${result.rowCount} thẻ ghi nhớ cực chuẩn!`,
       data: result.rows,
     });
 
@@ -231,7 +232,7 @@ export const importFlashcardsWithAI = async (req: Request, res: Response): Promi
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    console.error("Lỗi import PDF:", error);
+    console.error("Lỗi khi xử lý bằng Groq API:", error);
     res.status(500).json({ error: error.message });
   }
 };
