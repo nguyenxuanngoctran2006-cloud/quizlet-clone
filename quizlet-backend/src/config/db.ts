@@ -5,7 +5,6 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Kết nối thông qua DATABASE_URL bảo mật từ file .env
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -13,13 +12,16 @@ const pool = new Pool({
   }
 });
 
-// Thêm định nghĩa kiểu dữ liệu cho err, client, và release
-pool.connect((err: Error | undefined, client: pg.PoolClient | undefined, release: () => void) => {
-  if (err) {
-    return console.error('❌ Kết nối Supabase thất bại rồi:', err.stack);
-  }
-  console.log('💾 Đã kết nối cơ sở dữ liệu Supabase (PostgreSQL) ngon lành!');
-  release();
+// Bắt sự kiện lỗi ngầm của Pool để ngăn Node.js bị crash unhandled exception
+pool.on('error', (err) => {
+  console.error('⚠️ Phát hiện lỗi kết nối PostgreSQL ngầm (tự động bỏ qua):', err.message);
 });
+
+pool.connect()
+  .then((client) => {
+    console.log('💾 Đã kết nối cơ sở dữ liệu Supabase (PostgreSQL) ngon lành!');
+    client.release();
+  })
+  .catch((err) => console.error('❌ Kết nối Supabase thất bại:', err));
 
 export default pool;
