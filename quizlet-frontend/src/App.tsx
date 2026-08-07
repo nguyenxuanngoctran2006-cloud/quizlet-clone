@@ -46,6 +46,9 @@ function App() {
   const [editTerm, setEditTerm] = useState<string>('');
   const [editDefinition, setEditDefinition] = useState<string>('');
 
+  // 🌟 [MỚI] STATE CHỌN NHIỀU CÁC TỪ VỰNG ĐỂ XÓA
+  const [selectedCardIds, setSelectedCardIds] = useState<number[]>([]);
+
   // --- STATES IMPORT & AI ---
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isAiProcessing, setIsAiProcessing] = useState<boolean>(false);
@@ -94,6 +97,7 @@ function App() {
     setIsQuizMode(false);
     setIsMasteryMode(false);
     setCsvFile(null);
+    setSelectedCardIds([]); // 🌟 [MỚI] Reset lại danh sách từ được chọn khi chuyển bộ học phần
     fetchCardDetails(set.id);
   };
 
@@ -138,6 +142,7 @@ function App() {
     if (window.confirm('Xóa từ vựng này khỏi bộ học phần?')) {
       axios.delete(`http://localhost:5000/api/study-sets/flashcards/${cardId}`)
         .then(() => {
+          setSelectedCardIds((prev) => prev.filter((id) => id !== cardId));
           if (selectedSet) fetchCardDetails(selectedSet.id);
         });
     }
@@ -152,6 +157,42 @@ function App() {
       setEditingCard(null);
       if (selectedSet) fetchCardDetails(selectedSet.id);
     });
+  };
+
+  // 🌟 [MỚI] HÀM LOGIC CHO TÍNH NĂNG CHỌN NHIỀU & XÓA HÀNG LOẠT
+  const handleToggleSelectCard = (cardId: number) => {
+    setSelectedCardIds((prev) =>
+      prev.includes(cardId)
+        ? prev.filter((id) => id !== cardId)
+        : [...prev, cardId]
+    );
+  };
+
+  const handleSelectAllCards = () => {
+    if (selectedCardIds.length === cards.length) {
+      setSelectedCardIds([]);
+    } else {
+      setSelectedCardIds(cards.map((c) => c.id));
+    }
+  };
+
+  const handleDeleteSelectedCards = () => {
+    if (selectedCardIds.length === 0) return;
+
+    if (window.confirm(`Bạn có chắc chắn muốn xóa ${selectedCardIds.length} từ vựng đã chọn không?`)) {
+      axios.delete('http://localhost:5000/api/study-sets/flashcards/bulk-delete', {
+        data: { cardIds: selectedCardIds }
+      })
+      .then((res) => {
+        alert(res.data.message || 'Đã xóa các từ vựng đã chọn!');
+        setSelectedCardIds([]);
+        if (selectedSet) fetchCardDetails(selectedSet.id);
+      })
+      .catch((err) => {
+        console.error(err);
+        alert(err.response?.data?.error || 'Có lỗi xảy ra khi xóa hàng loạt!');
+      });
+    }
   };
 
   // --- LOGIC CHẾ ĐỘ THUỘC TỪ (MASTERY MODE) ---
@@ -175,7 +216,6 @@ function App() {
   };
 
   const generateNextMasteryQuestion = (currentList: PracticeProgress[]) => {
-    // Lọc ra danh sách những từ CHƯA thuộc hoàn toàn
     const unmasteredCards = currentList.filter(
       (item) => !item.termToDefPassed || !item.defToTermPassed
     );
@@ -185,10 +225,8 @@ function App() {
       return;
     }
 
-    // Chọn ngẫu nhiên 1 từ chưa thuộc
     const randomItem = unmasteredCards[Math.floor(Math.random() * unmasteredCards.length)];
 
-    // Xác định chiều hỏi (ưu tiên chiều chưa pass)
     let availableDirections: ('termToDef' | 'defToTerm')[] = [];
     if (!randomItem.termToDefPassed) availableDirections.push('termToDef');
     if (!randomItem.defToTermPassed) availableDirections.push('defToTerm');
@@ -199,7 +237,6 @@ function App() {
     const questionText = isTermToDef ? randomItem.card.term : randomItem.card.definition;
     const correctAnswer = isTermToDef ? randomItem.card.definition : randomItem.card.term;
 
-    // Lấy đáp án sai
     const otherAnswers = cards
       .filter((c) => c.id !== randomItem.card.id)
       .map((c) => (isTermToDef ? c.definition : c.term));
@@ -333,36 +370,34 @@ function App() {
   };
 
   const handleImportWithAI = () => {
-  if (!csvFile || !selectedSet) return alert('Vui lòng chọn file PDF, TXT hoặc Ảnh!');
-  
-  const ext = csvFile.name.split('.').pop()?.toLowerCase();
-  setIsAiProcessing(true);
-  
-  const formData = new FormData();
-  formData.append('file', csvFile);
+    if (!csvFile || !selectedSet) return alert('Vui lòng chọn file PDF, TXT hoặc Ảnh!');
+    
+    const ext = csvFile.name.split('.').pop()?.toLowerCase();
+    setIsAiProcessing(true);
+    
+    const formData = new FormData();
+    formData.append('file', csvFile);
 
-  // Chọn API dựa vào định dạng file
-  const isImage = ['png', 'jpg', 'jpeg'].includes(ext || '');
-  const endpoint = isImage 
-    ? `http://localhost:5000/api/study-sets/${selectedSet.id}/import-image`
-    : `http://localhost:5000/api/study-sets/${selectedSet.id}/import-pdf`;
+    const isImage = ['png', 'jpg', 'jpeg'].includes(ext || '');
+    const endpoint = isImage 
+      ? `http://localhost:5000/api/study-sets/${selectedSet.id}/import-image`
+      : `http://localhost:5000/api/study-sets/${selectedSet.id}/import-pdf`;
 
-  axios.post(endpoint, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  })
-  .then((res) => { 
-    setIsAiProcessing(false); 
-    alert(res.data.message || 'Quét dữ liệu thành công!');
-    setCsvFile(null); 
-    fetchCardDetails(selectedSet.id); 
-  })
-  .catch((err) => {
-    setIsAiProcessing(false);
-    alert(err.response?.data?.error || 'Có lỗi xảy ra khi AI quét file!');
-  });
-};
+    axios.post(endpoint, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    .then((res) => { 
+      setIsAiProcessing(false); 
+      alert(res.data.message || 'Quét dữ liệu thành công!');
+      setCsvFile(null); 
+      fetchCardDetails(selectedSet.id); 
+    })
+    .catch((err) => {
+      setIsAiProcessing(false);
+      alert(err.response?.data?.error || 'Có lỗi xảy ra khi AI quét file!');
+    });
+  };
 
-  // Tính số từ đã thuộc hoàn toàn (đạt cả 2 chiều)
   const masteredCount = masteryList.filter((item) => item.termToDefPassed && item.defToTermPassed).length;
 
   // ==================== GIAO DIỆN XEM CHI TIẾT BỘ HỌC PHẦN ====================
@@ -390,7 +425,6 @@ function App() {
                 </button>
               </div>
 
-              {/* Thanh tiến trình Progress Bar */}
               <div style={{ width: '100%', backgroundColor: '#e2e8f0', borderRadius: '10px', height: '10px', marginBottom: '30px', overflow: 'hidden' }}>
                 <div style={{ width: `${(masteredCount / cards.length) * 100}%`, backgroundColor: '#8b5cf6', height: '100%', transition: 'width 0.3s' }}></div>
               </div>
@@ -510,7 +544,6 @@ function App() {
                   <p style={{ color: '#64748b', margin: 0 }}>{selectedSet.description || 'Không có mô tả.'}</p>
                 </div>
 
-                {/* Các nút Chế độ Học & Kiểm tra */}
                 {cards.length >= 4 && (
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <button onClick={startMasteryMode} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 12px rgba(139,92,246,0.3)' }}>
@@ -528,7 +561,12 @@ function App() {
 
               {/* Vùng Import File */}
               <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <input type="file" accept=".csv, .txt, .pdf, .png, .jpg, .jpeg" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} style={{ fontSize: '14px' }} />
+      <input 
+  type="file" 
+  accept=".csv, .txt, .pdf, .doc, .docx, .png, .jpg, .jpeg, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
+  onChange={(e) => setCsvFile(e.target.files?.[0] || null)} 
+  style={{ fontSize: '14px' }} 
+/>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button onClick={handleImportFile} style={{ backgroundColor: '#f1f5f9', color: '#334155', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>Import CSV/TXT</button>
                   <button onClick={handleImportWithAI} disabled={isAiProcessing} style={{ backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
@@ -561,34 +599,105 @@ function App() {
                 </div>
               )}
 
-              {/* 📋 DANH SÁCH TẤT CẢ TỪ VỰNG VÀ NGHĨA Ở DƯỚI */}
+              {/* 🌟 [MỚI] DANH SÁCH TỪ VỰNG CÓ CHẾ ĐỘ CHỌN NHIỀU & XÓA HÀNG LOẠT */}
               <div style={{ marginTop: '50px' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: '800', color: '#1e293b', marginBottom: '15px' }}>Danh sách từ vựng ({cards.length})</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {cards.map((card) => (
-                    <div key={card.id} style={{ backgroundColor: '#fff', padding: '18px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                      {editingCard?.id === card.id ? (
-                        <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
-                          <input type="text" value={editTerm} onChange={(e) => setEditTerm(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
-                          <input type="text" value={editDefinition} onChange={(e) => setEditDefinition(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
-                          <button onClick={() => handleSaveCardEdit(card.id)} style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Lưu</button>
-                          <button onClick={() => setEditingCard(null)} style={{ backgroundColor: '#94a3b8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer' }}>Hủy</button>
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: 1 }}>
-                            <button onClick={() => handleSpeak(card.term)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>🔊</button>
-                            <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', width: '200px' }}>{card.term}</span>
-                            <span style={{ color: '#64748b', fontSize: '16px' }}>{card.definition}</span>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => { setEditingCard(card); setEditTerm(card.term); setEditDefinition(card.definition); }} style={{ background: '#f1f5f9', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer' }}>✏️ Sửa</button>
-                            <button onClick={() => handleDeleteCard(card.id)} style={{ background: '#fef2f2', color: '#ef4444', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>🗑️ Xóa</button>
-                          </div>
-                        </>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <h3 style={{ fontSize: '20px', fontWeight: '800', color: '#1e293b', margin: 0 }}>
+                    Danh sách từ vựng ({cards.length})
+                  </h3>
+
+                  {/* Nút Chọn tất cả & Xóa đã chọn */}
+                  {cards.length > 0 && (
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <button
+                        onClick={handleSelectAllCards}
+                        style={{
+                          backgroundColor: '#f1f5f9',
+                          color: '#334155',
+                          border: '1px solid #cbd5e1',
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          fontSize: '14px'
+                        }}
+                      >
+                        {selectedCardIds.length === cards.length ? '⬜ Bỏ chọn tất cả' : '☑️ Chọn tất cả'}
+                      </button>
+
+                      {selectedCardIds.length > 0 && (
+                        <button
+                          onClick={handleDeleteSelectedCards}
+                          style={{
+                            backgroundColor: '#ef4444',
+                            color: '#fff',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)'
+                          }}
+                        >
+                          🗑️ Xóa {selectedCardIds.length} từ đã chọn
+                        </button>
                       )}
                     </div>
-                  ))}
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {cards.map((card) => {
+                    const isSelected = selectedCardIds.includes(card.id);
+
+                    return (
+                      <div
+                        key={card.id}
+                        style={{
+                          backgroundColor: isSelected ? '#f0fdf4' : '#fff',
+                          padding: '18px 24px',
+                          borderRadius: '12px',
+                          border: isSelected ? '2px solid #10b981' : '1px solid #e2e8f0',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {editingCard?.id === card.id ? (
+                          <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                            <input type="text" value={editTerm} onChange={(e) => setEditTerm(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                            <input type="text" value={editDefinition} onChange={(e) => setEditDefinition(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                            <button onClick={() => handleSaveCardEdit(card.id)} style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Lưu</button>
+                            <button onClick={() => setEditingCard(null)} style={{ backgroundColor: '#94a3b8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer' }}>Hủy</button>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
+                              {/* Checkbox chọn từ */}
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectCard(card.id)}
+                                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
+                              />
+
+                              <button onClick={() => handleSpeak(card.term)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>🔊</button>
+                              <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', width: '200px' }}>{card.term}</span>
+                              <span style={{ color: '#64748b', fontSize: '16px' }}>{card.definition}</span>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={() => { setEditingCard(card); setEditTerm(card.term); setEditDefinition(card.definition); }} style={{ background: '#f1f5f9', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer' }}>✏️ Sửa</button>
+                              <button onClick={() => handleDeleteCard(card.id)} style={{ background: '#fef2f2', color: '#ef4444', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>🗑️ Xóa</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
