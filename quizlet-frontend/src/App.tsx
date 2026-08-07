@@ -332,15 +332,40 @@ function App() {
 
   // --- PHÁT ÂM TTS ---
   const handleSpeak = (text: string) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/g.test(text);
-      utterance.lang = hasJapanese ? 'ja-JP' : 'en-US';
-      utterance.rate = 0.9;
-      window.speechSynthesis.speak(utterance);
+  if (!('speechSynthesis' in window)) {
+    alert('Trình duyệt của bạn không hỗ trợ tính năng phát âm!');
+    return;
+  }
+
+  // 1. Hủy các câu thoại đang phát trước đó
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  
+  // Kiểm tra nếu là tiếng Nhật
+  const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/g.test(text);
+  utterance.lang = hasJapanese ? 'ja-JP' : 'en-US';
+  utterance.rate = 0.9; // Tốc độ đọc
+  utterance.volume = 1.0; // Âm lượng tối đa
+
+  // 2. Tìm danh sách giọng nói khả thi trên điện thoại
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length > 0) {
+    const targetLang = hasJapanese ? 'ja' : 'en';
+    // Ưu tiên chọn giọng nói chuẩn của hệ thống/Google trên mobile
+    const matchedVoice = voices.find(
+      (v) => v.lang.startsWith(targetLang) || v.lang.includes(targetLang)
+    );
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
     }
-  };
+  }
+
+  // 3. Xử lý trường hợp bị treo queue trên iOS / Android
+  setTimeout(() => {
+    window.speechSynthesis.speak(utterance);
+  }, 50);
+};
 
   // --- IMPORT FILE & AI ---
   const handleImportFile = () => {
