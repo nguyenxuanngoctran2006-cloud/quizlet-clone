@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import Papa from 'papaparse';
 
+// Khai báo Base URL backend Render
+const API_BASE_URL = 'https://susu-quizlet.onrender.com/api/study-sets';
+
 interface StudySet {
   id: number;
   title: string;
@@ -46,7 +49,7 @@ function App() {
   const [editTerm, setEditTerm] = useState<string>('');
   const [editDefinition, setEditDefinition] = useState<string>('');
 
-  // 🌟 [MỚI] STATE CHỌN NHIỀU CÁC TỪ VỰNG ĐỂ XÓA
+  // STATE CHỌN NHIỀU CÁC TỪ VỰNG ĐỂ XÓA
   const [selectedCardIds, setSelectedCardIds] = useState<number[]>([]);
 
   // --- STATES IMPORT & AI ---
@@ -77,13 +80,13 @@ function App() {
 
   // --- API FETCH DỮ LIỆU ---
   const fetchStudySets = () => {
-    axios.get('http://localhost:5000/api/study-sets')
+    axios.get(`${API_BASE_URL}`)
       .then((res) => { setStudySets(res.data.data); setLoading(false); })
       .catch(() => setLoading(false));
   };
 
   const fetchCardDetails = (setId: number) => {
-    axios.get(`http://localhost:5000/api/study-sets/${setId}`)
+    axios.get(`${API_BASE_URL}/${setId}`)
       .then((res) => setCards(res.data.flashcards))
       .catch((err) => console.error(err));
   };
@@ -97,7 +100,7 @@ function App() {
     setIsQuizMode(false);
     setIsMasteryMode(false);
     setCsvFile(null);
-    setSelectedCardIds([]); // 🌟 [MỚI] Reset lại danh sách từ được chọn khi chuyển bộ học phần
+    setSelectedCardIds([]); // Reset lại danh sách từ được chọn khi chuyển bộ học phần
     fetchCardDetails(set.id);
   };
 
@@ -107,13 +110,13 @@ function App() {
     if (!title.trim()) return alert('Vui lòng nhập tiêu đề!');
 
     if (editingSet) {
-      axios.put(`http://localhost:5000/api/study-sets/${editingSet.id}`, { title, description })
+      axios.put(`${API_BASE_URL}/${editingSet.id}`, { title, description })
         .then(() => {
           setTitle(''); setDescription(''); setEditingSet(null); setShowForm(false);
           fetchStudySets();
         });
     } else {
-      axios.post('http://localhost:5000/api/study-sets', { title, description })
+      axios.post(`${API_BASE_URL}`, { title, description })
         .then(() => {
           setTitle(''); setDescription(''); setShowForm(false);
           fetchStudySets();
@@ -132,7 +135,7 @@ function App() {
   const handleDeleteSet = (e: React.MouseEvent, setId: number) => {
     e.stopPropagation();
     if (window.confirm('Bạn có chắc chắn muốn xóa bộ học phần này không?')) {
-      axios.delete(`http://localhost:5000/api/study-sets/${setId}`)
+      axios.delete(`${API_BASE_URL}/${setId}`)
         .then(() => fetchStudySets())
         .catch((err) => console.error(err));
     }
@@ -140,7 +143,7 @@ function App() {
 
   const handleDeleteCard = (cardId: number) => {
     if (window.confirm('Xóa từ vựng này khỏi bộ học phần?')) {
-      axios.delete(`http://localhost:5000/api/study-sets/flashcards/${cardId}`)
+      axios.delete(`${API_BASE_URL}/flashcards/${cardId}`)
         .then(() => {
           setSelectedCardIds((prev) => prev.filter((id) => id !== cardId));
           if (selectedSet) fetchCardDetails(selectedSet.id);
@@ -149,7 +152,7 @@ function App() {
   };
 
   const handleSaveCardEdit = (cardId: number) => {
-    axios.put(`http://localhost:5000/api/study-sets/flashcards/${cardId}`, {
+    axios.put(`${API_BASE_URL}/flashcards/${cardId}`, {
       term: editTerm,
       definition: editDefinition
     })
@@ -159,7 +162,7 @@ function App() {
     });
   };
 
-  // 🌟 [MỚI] HÀM LOGIC CHO TÍNH NĂNG CHỌN NHIỀU & XÓA HÀNG LOẠT
+  // HÀM LOGIC CHO TÍNH NĂNG CHỌN NHIỀU & XÓA HÀNG LOẠT
   const handleToggleSelectCard = (cardId: number) => {
     setSelectedCardIds((prev) =>
       prev.includes(cardId)
@@ -180,7 +183,7 @@ function App() {
     if (selectedCardIds.length === 0) return;
 
     if (window.confirm(`Bạn có chắc chắn muốn xóa ${selectedCardIds.length} từ vựng đã chọn không?`)) {
-      axios.delete('http://localhost:5000/api/study-sets/flashcards/bulk-delete', {
+      axios.delete(`${API_BASE_URL}/flashcards/bulk-delete`, {
         data: { cardIds: selectedCardIds }
       })
       .then((res) => {
@@ -365,12 +368,12 @@ function App() {
 
   const sendDataToBackend = (data: any[]) => {
     if (!selectedSet) return;
-    axios.post(`http://localhost:5000/api/study-sets/${selectedSet.id}/import`, { flashcards: data })
+    axios.post(`${API_BASE_URL}/${selectedSet.id}/import`, { flashcards: data })
       .then(() => { alert('Import thành công!'); setCsvFile(null); fetchCardDetails(selectedSet.id); });
   };
 
   const handleImportWithAI = () => {
-    if (!csvFile || !selectedSet) return alert('Vui lòng chọn file PDF, TXT hoặc Ảnh!');
+    if (!csvFile || !selectedSet) return alert('Vui lòng chọn file PDF, Word, TXT hoặc Ảnh!');
     
     const ext = csvFile.name.split('.').pop()?.toLowerCase();
     setIsAiProcessing(true);
@@ -380,8 +383,8 @@ function App() {
 
     const isImage = ['png', 'jpg', 'jpeg'].includes(ext || '');
     const endpoint = isImage 
-      ? `http://localhost:5000/api/study-sets/${selectedSet.id}/import-image`
-      : `http://localhost:5000/api/study-sets/${selectedSet.id}/import-pdf`;
+      ? `${API_BASE_URL}/${selectedSet.id}/import-image`
+      : `${API_BASE_URL}/${selectedSet.id}/import-pdf`;
 
     axios.post(endpoint, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
@@ -561,12 +564,12 @@ function App() {
 
               {/* Vùng Import File */}
               <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <input 
-  type="file" 
-  accept=".csv, .txt, .pdf, .doc, .docx, .png, .jpg, .jpeg, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
-  onChange={(e) => setCsvFile(e.target.files?.[0] || null)} 
-  style={{ fontSize: '14px' }} 
-/>
+                <input 
+                  type="file" 
+                  accept=".csv, .txt, .pdf, .doc, .docx, .png, .jpg, .jpeg, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
+                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)} 
+                  style={{ fontSize: '14px' }} 
+                />
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button onClick={handleImportFile} style={{ backgroundColor: '#f1f5f9', color: '#334155', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>Import CSV/TXT</button>
                   <button onClick={handleImportWithAI} disabled={isAiProcessing} style={{ backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
@@ -599,7 +602,7 @@ function App() {
                 </div>
               )}
 
-              {/* 🌟 [MỚI] DANH SÁCH TỪ VỰNG CÓ CHẾ ĐỘ CHỌN NHIỀU & XÓA HÀNG LOẠT */}
+              {/* DANH SÁCH TỪ VỰNG CÓ CHẾ ĐỘ CHỌN NHIỀU & XÓA HÀNG LOẠT */}
               <div style={{ marginTop: '50px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                   <h3 style={{ fontSize: '20px', fontWeight: '800', color: '#1e293b', margin: 0 }}>
