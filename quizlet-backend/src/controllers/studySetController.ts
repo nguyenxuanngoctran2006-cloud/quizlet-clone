@@ -1,5 +1,6 @@
 import { readPdfText } from 'pdf-text-reader';
 import { createWorker } from 'tesseract.js';
+import mammoth from 'mammoth';
 import Groq from 'groq-sdk';
 import fs from 'fs';
 import { Request, Response } from 'express';
@@ -76,7 +77,6 @@ export const updateStudySet = async (req: Request, res: Response): Promise<void>
 };
 
 // 5. Xóa Bộ học phần (và tự động xóa các thẻ thuộc bộ đó)
-// Xóa bộ học phần
 export const deleteStudySet = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -131,21 +131,33 @@ export const importFlashcards = async (req: Request, res: Response): Promise<voi
   }
 };
 
-// 7. Bóc tách file PDF và sử dụng Groq AI tạo từ vựng tự động
+// 7. Bóc tách file PDF / DOCX / DOC / TXT và sử dụng Groq AI tạo từ vựng tự động
 export const importFlashcardsWithAI = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const file = req.file;
 
     if (!file) {
-      res.status(400).json({ error: 'Vui lòng upload tài liệu PDF!' });
+      res.status(400).json({ error: 'Vui lòng upload tài liệu (PDF, DOC, DOCX hoặc TXT)!' });
       return;
     }
 
-    const textContent = await readPdfText({ filePath: file.path });
+    const ext = file.originalname.split('.').pop()?.toLowerCase();
+    let textContent = '';
+
+    // Bóc tách văn bản tùy thuộc vào định dạng file
+    if (ext === 'pdf') {
+      textContent = await readPdfText({ filePath: file.path });
+    } else if (ext === 'docx' || ext === 'doc') {
+      const docResult = await mammoth.extractRawText({ path: file.path });
+      textContent = docResult.value;
+    } else {
+      // Đọc file thô dạng .txt / .csv
+      textContent = fs.readFileSync(file.path, 'utf-8');
+    }
 
     if (!textContent || !textContent.trim()) {
-      res.status(400).json({ error: 'Không thể bóc tách nội dung chữ từ file PDF này!' });
+      res.status(400).json({ error: 'Không thể bóc tách nội dung chữ từ file này!' });
       if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
       return;
     }
@@ -158,14 +170,14 @@ export const importFlashcardsWithAI = async (req: Request, res: Response): Promi
         {
           role: "user",
           content: `Bạn là một trợ lý ảo phân tích văn bản học tập thông minh. 
-Nhiệm vụ của bạn là đọc đoạn văn bản thô được bóc tách từ file PDF dưới đây. Đoạn văn bản này có thể chứa danh sách từ vựng được sắp xếp theo dạng lưới, hàng cột lộn xộn hoặc phân tách bởi dấu gạch ngang.
+Nhiệm vụ của bạn là đọc đoạn văn bản thô được bóc tách từ tài liệu dưới đây. Đoạn văn bản này có thể chứa danh sách từ vựng được sắp xếp theo dạng lưới, hàng cột lộn xộn hoặc phân tách bởi dấu gạch ngang.
 Hãy tìm kiếm, dịch thuật (nếu cần) và nhóm toàn bộ các cặp thuật ngữ/từ vựng cùng định nghĩa/nghĩa tiếng Việt tương ứng của chúng.
 
 Yêu cầu đầu ra bắt buộc: Trả về một chuỗi định dạng JSON thuần túy, là một mảng các đối tượng chứa "term" (Từ vựng chính) và "definition" (Định nghĩa/Ý nghĩa tiếng Việt).
 Không giải thích gì thêm, không bọc trong markdown \`\`\`json.
 Định dạng mẫu: [{"term": "sleep", "definition": "ngủ"}, {"term": "桜 (さくら)", "definition": "Hoa anh đào"}]
 
-Nội dung văn bản PDF cần phân tích:
+Nội dung văn bản tài liệu cần phân tích:
 ${textContent}`
         }
       ],
@@ -275,6 +287,7 @@ export const deleteFlashcard = async (req: Request, res: Response): Promise<void
   }
 };
 
+// 10. Quét chữ từ hình ảnh bằng Tesseract OCR
 export const importFlashcardsFromImage = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -398,6 +411,32 @@ ${textContent}`
       fs.unlinkSync(req.file.path);
     }
     console.error("Lỗi Tesseract OCR:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// 11. Xóa nhiều thẻ từ vựng cùng lúc (Bulk Delete)
+export const deleteMultipleFlashcards = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { cardIds } = req.body; // Nhận mảng các ID dạng: [1, 2, 3]
+
+    if (!Array.isArray(cardIds) || cardIds.length === 0) {
+      res.status(400).json({ error: 'Danh sách ID thẻ cần xóa không hợp lệ!' });
+      return;
+    }
+
+    // Xóa tất cả flashcards có ID nằm trong mảng cardIds
+    const result = await pool.query(
+      'DELETE FROM flashcards WHERE id = ANY($1::int[]) RETURNING *',
+      [cardIds]
+    );
+
+    res.status(200).json({
+      message: `🎉 Đã xóa thành công ${result.rowCount} thẻ từ vựng!`,
+      deletedCount: result.rowCount
+    });
+  } catch (error: any) {
+    console.error('Lỗi khi xóa nhiều thẻ từ vựng:', error);
     res.status(500).json({ error: error.message });
   }
 };
