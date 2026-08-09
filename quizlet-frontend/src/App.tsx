@@ -469,7 +469,7 @@ function App() {
               {isSoundEnabled ? '🔊 Đọc đáp án: BẬT' : '🔇 Đọc đáp án: TẮT'}
             </button>
 
-            <span style={{ fontSize: '20px', fontWeight: '800' }}>Quizlet Master ✨</span>
+            <span style={{ fontSize: '20px', fontWeight: '800' }}>Susu Quizlet ✨</span>
           </div>
         </nav>
 
