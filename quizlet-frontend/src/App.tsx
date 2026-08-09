@@ -52,6 +52,9 @@ function App() {
   // STATE CHỌN NHIỀU CÁC TỪ VỰNG ĐỂ XÓA
   const [selectedCardIds, setSelectedCardIds] = useState<number[]>([]);
 
+  // 🔊 STATE BẬT / TẮT ÂM THANH ĐỌC ĐÁP ÁN (Mặc định: BẬT)
+  const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(true);
+
   // --- STATES IMPORT & AI ---
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isAiProcessing, setIsAiProcessing] = useState<boolean>(false);
@@ -100,7 +103,7 @@ function App() {
     setIsQuizMode(false);
     setIsMasteryMode(false);
     setCsvFile(null);
-    setSelectedCardIds([]); // Reset lại danh sách từ được chọn khi chuyển bộ học phần
+    setSelectedCardIds([]); // Reset danh sách chọn khi chuyển bộ học phần
     fetchCardDetails(set.id);
   };
 
@@ -162,7 +165,7 @@ function App() {
     });
   };
 
-  // HÀM LOGIC CHO TÍNH NĂNG CHỌN NHIỀU & XÓA HÀNG LOẠT
+  // LOGIC CHỌN NHIỀU & XÓA HÀNG LOẠT
   const handleToggleSelectCard = (cardId: number) => {
     setSelectedCardIds((prev) =>
       prev.includes(cardId)
@@ -256,36 +259,38 @@ function App() {
     });
   };
 
- const handleMasterySubmit = (option: string) => {
-  if (!currentQuestion || masteryAnswer !== null) return;
-  
-  // 🔊 Tự động đọc đáp án người dùng vừa chọn (dù đúng hay sai)
-  handleSpeak(option);
-
-  setMasteryAnswer(option);
-
-  const isCorrect = option === currentQuestion.correctAnswer;
-
-  setTimeout(() => {
-    let updatedList = [...masteryList];
-    if (isCorrect) {
-      updatedList = updatedList.map((item) => {
-        if (item.card.id === currentQuestion.cardId) {
-          return {
-            ...item,
-            termToDefPassed: currentQuestion.direction === 'termToDef' ? true : item.termToDefPassed,
-            defToTermPassed: currentQuestion.direction === 'defToTerm' ? true : item.defToTermPassed,
-          };
-        }
-        return item;
-      });
+  const handleMasterySubmit = (option: string) => {
+    if (!currentQuestion || masteryAnswer !== null) return;
+    
+    // 🔊 Chỉ đọc đáp án nếu Nút Âm Thanh đang BẬT
+    if (isSoundEnabled) {
+      handleSpeak(option);
     }
 
-    setMasteryList(updatedList);
-    setMasteryAnswer(null);
-    generateNextMasteryQuestion(updatedList);
-  }, 1200); // 💡 Tăng nhẹ delay lên 1.2s để phát hết âm thanh trước khi qua câu tiếp theo
-};
+    setMasteryAnswer(option);
+
+    const isCorrect = option === currentQuestion.correctAnswer;
+
+    setTimeout(() => {
+      let updatedList = [...masteryList];
+      if (isCorrect) {
+        updatedList = updatedList.map((item) => {
+          if (item.card.id === currentQuestion.cardId) {
+            return {
+              ...item,
+              termToDefPassed: currentQuestion.direction === 'termToDef' ? true : item.termToDefPassed,
+              defToTermPassed: currentQuestion.direction === 'defToTerm' ? true : item.defToTermPassed,
+            };
+          }
+          return item;
+        });
+      }
+
+      setMasteryList(updatedList);
+      setMasteryAnswer(null);
+      generateNextMasteryQuestion(updatedList);
+    }, 1200);
+  };
 
   // --- LOGIC TRỘN BÀI KIỂM TRA THƯỜNG ---
   const handleStartQuiz = (direction: 'termToDef' | 'defToTerm') => {
@@ -317,63 +322,60 @@ function App() {
   };
 
   const handleAnswerSubmit = (option: string) => {
-  if (selectedAnswer !== null) return;
+    if (selectedAnswer !== null) return;
 
-  // 🔊 Tự động đọc đáp án người dùng vừa chọn (dù đúng hay sai)
-  handleSpeak(option);
-
-  setSelectedAnswer(option);
-
-  if (option === quizQuestions[currentQuizIndex].correctAnswer) {
-    setScore((prev) => prev + 1);
-  }
-
-  setTimeout(() => {
-    if (currentQuizIndex < quizQuestions.length - 1) {
-      setCurrentQuizIndex((prev) => prev + 1);
-      setSelectedAnswer(null);
-    } else {
-      setQuizFinished(true);
+    // 🔊 Chỉ đọc đáp án nếu Nút Âm Thanh đang BẬT
+    if (isSoundEnabled) {
+      handleSpeak(option);
     }
-  }, 1200); // 💡 Tăng nhẹ delay lên 1.2s để phát hết âm thanh trước khi qua câu tiếp theo
-};
 
-  // --- PHÁT ÂM TTS ---
+    setSelectedAnswer(option);
+
+    if (option === quizQuestions[currentQuizIndex].correctAnswer) {
+      setScore((prev) => prev + 1);
+    }
+
+    setTimeout(() => {
+      if (currentQuizIndex < quizQuestions.length - 1) {
+        setCurrentQuizIndex((prev) => prev + 1);
+        setSelectedAnswer(null);
+      } else {
+        setQuizFinished(true);
+      }
+    }, 1200);
+  };
+
+  // --- PHÁT ÂM TTS TỐI ƯU MOBILE ---
   const handleSpeak = (text: string) => {
-  if (!('speechSynthesis' in window)) {
-    alert('Trình duyệt của bạn không hỗ trợ tính năng phát âm!');
-    return;
-  }
-
-  // 1. Hủy các câu thoại đang phát trước đó
-  window.speechSynthesis.cancel();
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  
-  // Kiểm tra nếu là tiếng Nhật
-  const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/g.test(text);
-  utterance.lang = hasJapanese ? 'ja-JP' : 'en-US';
-  utterance.rate = 0.9; // Tốc độ đọc
-  utterance.volume = 1.0; // Âm lượng tối đa
-
-  // 2. Tìm danh sách giọng nói khả thi trên điện thoại
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length > 0) {
-    const targetLang = hasJapanese ? 'ja' : 'en';
-    // Ưu tiên chọn giọng nói chuẩn của hệ thống/Google trên mobile
-    const matchedVoice = voices.find(
-      (v) => v.lang.startsWith(targetLang) || v.lang.includes(targetLang)
-    );
-    if (matchedVoice) {
-      utterance.voice = matchedVoice;
+    if (!('speechSynthesis' in window)) {
+      alert('Trình duyệt của bạn không hỗ trợ tính năng phát âm!');
+      return;
     }
-  }
 
-  // 3. Xử lý trường hợp bị treo queue trên iOS / Android
-  setTimeout(() => {
-    window.speechSynthesis.speak(utterance);
-  }, 50);
-};
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/g.test(text);
+    utterance.lang = hasJapanese ? 'ja-JP' : 'en-US';
+    utterance.rate = 0.9;
+    utterance.volume = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      const targetLang = hasJapanese ? 'ja' : 'en';
+      const matchedVoice = voices.find(
+        (v) => v.lang.startsWith(targetLang) || v.lang.includes(targetLang)
+      );
+      if (matchedVoice) {
+        utterance.voice = matchedVoice;
+      }
+    }
+
+    setTimeout(() => {
+      window.speechSynthesis.speak(utterance);
+    }, 50);
+  };
 
   // --- IMPORT FILE & AI ---
   const handleImportFile = () => {
@@ -444,7 +446,31 @@ function App() {
           <span onClick={() => setSelectedSet(null)} style={{ fontSize: '18px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
             ← Trang chủ
           </span>
-          <span style={{ fontSize: '20px', fontWeight: '800' }}>Quizlet Master ✨</span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            {/* 🔊 NÚT BẬT / TẮT ÂM THANH ĐỌC ĐÁP ÁN */}
+            <button
+              onClick={() => setIsSoundEnabled(!isSoundEnabled)}
+              style={{
+                backgroundColor: isSoundEnabled ? 'rgba(255, 255, 255, 0.2)' : 'rgba(239, 68, 68, 0.3)',
+                color: '#fff',
+                border: '1px solid rgba(255, 255, 255, 0.4)',
+                padding: '6px 14px',
+                borderRadius: '20px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                fontSize: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s'
+              }}
+            >
+              {isSoundEnabled ? '🔊 Đọc đáp án: BẬT' : '🔇 Đọc đáp án: TẮT'}
+            </button>
+
+            <span style={{ fontSize: '20px', fontWeight: '800' }}>Quizlet Master ✨</span>
+          </div>
         </nav>
 
         <div style={{ maxWidth: '900px', margin: '30px auto', padding: '0 20px' }}>
