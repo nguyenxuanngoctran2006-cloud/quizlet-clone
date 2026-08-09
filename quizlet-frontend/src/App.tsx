@@ -256,32 +256,36 @@ function App() {
     });
   };
 
-  const handleMasterySubmit = (option: string) => {
-    if (!currentQuestion || masteryAnswer !== null) return;
-    setMasteryAnswer(option);
+ const handleMasterySubmit = (option: string) => {
+  if (!currentQuestion || masteryAnswer !== null) return;
+  
+  // 🔊 Tự động đọc đáp án người dùng vừa chọn (dù đúng hay sai)
+  handleSpeak(option);
 
-    const isCorrect = option === currentQuestion.correctAnswer;
+  setMasteryAnswer(option);
 
-    setTimeout(() => {
-      let updatedList = [...masteryList];
-      if (isCorrect) {
-        updatedList = updatedList.map((item) => {
-          if (item.card.id === currentQuestion.cardId) {
-            return {
-              ...item,
-              termToDefPassed: currentQuestion.direction === 'termToDef' ? true : item.termToDefPassed,
-              defToTermPassed: currentQuestion.direction === 'defToTerm' ? true : item.defToTermPassed,
-            };
-          }
-          return item;
-        });
-      }
+  const isCorrect = option === currentQuestion.correctAnswer;
 
-      setMasteryList(updatedList);
-      setMasteryAnswer(null);
-      generateNextMasteryQuestion(updatedList);
-    }, 900);
-  };
+  setTimeout(() => {
+    let updatedList = [...masteryList];
+    if (isCorrect) {
+      updatedList = updatedList.map((item) => {
+        if (item.card.id === currentQuestion.cardId) {
+          return {
+            ...item,
+            termToDefPassed: currentQuestion.direction === 'termToDef' ? true : item.termToDefPassed,
+            defToTermPassed: currentQuestion.direction === 'defToTerm' ? true : item.defToTermPassed,
+          };
+        }
+        return item;
+      });
+    }
+
+    setMasteryList(updatedList);
+    setMasteryAnswer(null);
+    generateNextMasteryQuestion(updatedList);
+  }, 1200); // 💡 Tăng nhẹ delay lên 1.2s để phát hết âm thanh trước khi qua câu tiếp theo
+};
 
   // --- LOGIC TRỘN BÀI KIỂM TRA THƯỜNG ---
   const handleStartQuiz = (direction: 'termToDef' | 'defToTerm') => {
@@ -313,22 +317,26 @@ function App() {
   };
 
   const handleAnswerSubmit = (option: string) => {
-    if (selectedAnswer !== null) return;
-    setSelectedAnswer(option);
+  if (selectedAnswer !== null) return;
 
-    if (option === quizQuestions[currentQuizIndex].correctAnswer) {
-      setScore((prev) => prev + 1);
+  // 🔊 Tự động đọc đáp án người dùng vừa chọn (dù đúng hay sai)
+  handleSpeak(option);
+
+  setSelectedAnswer(option);
+
+  if (option === quizQuestions[currentQuizIndex].correctAnswer) {
+    setScore((prev) => prev + 1);
+  }
+
+  setTimeout(() => {
+    if (currentQuizIndex < quizQuestions.length - 1) {
+      setCurrentQuizIndex((prev) => prev + 1);
+      setSelectedAnswer(null);
+    } else {
+      setQuizFinished(true);
     }
-
-    setTimeout(() => {
-      if (currentQuizIndex < quizQuestions.length - 1) {
-        setCurrentQuizIndex((prev) => prev + 1);
-        setSelectedAnswer(null);
-      } else {
-        setQuizFinished(true);
-      }
-    }, 900);
-  };
+  }, 1200); // 💡 Tăng nhẹ delay lên 1.2s để phát hết âm thanh trước khi qua câu tiếp theo
+};
 
   // --- PHÁT ÂM TTS ---
   const handleSpeak = (text: string) => {
