@@ -1,62 +1,57 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: #f6f7fb; /* Màu nền xám nhạt đặc trưng của Quizlet */
-  color: #303545;
-}
-
 /* Khung chứa hiệu ứng 3D */
 .flashcard-container {
   perspective: 1000px;
   width: 100%;
   max-width: 600px;
   height: 350px;
-  margin: 0 auto;
+  margin: 0 auto 30px auto;
   cursor: pointer;
 }
 
-/* Thẻ bài thực tế */
+/* Thẻ bài thực tế - Dùng Grid để ép 2 mặt đè hoàn toàn lên nhau */
 .flashcard-inner {
-  position: relative;
+  display: grid;
+  grid-template-areas: "card";
   width: 100%;
   height: 100%;
   text-align: center;
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   transform-style: preserve-3d;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
   border-radius: 16px;
 }
 
-/* Khi có class .flipped thì xoay 180 độ theo chiều ngang (Y) */
+/* Khi có class .flipped thì xoay 180 độ */
 .flashcard-inner.flipped {
   transform: rotateY(180deg);
 }
 
-/* Định dạng chung cho 2 mặt */
-.flashcard-front, .flashcard-back {
-  position: absolute;
-  top: 0;
-  left: 0;
+/* Định dạng chung cho cả 2 mặt - Xếp chung vào 1 ô grid "card" */
+.flashcard-front,
+.flashcard-back {
+  grid-area: card;
   width: 100%;
   height: 100%;
-  -webkit-backface-visibility: hidden; /* 🌟 Thêm hỗ trợ Safari / Mobile Webkit */
-  backface-visibility: hidden;         /* 🌟 Ẩn tuyệt đối mặt sau */
+  -webkit-backface-visibility: hidden !important;
+  backface-visibility: hidden !important;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 28px;
-  font-weight: 600;
-  padding: 20px;
+  font-weight: 700;
+  padding: 30px;
   box-sizing: border-box;
   border-radius: 16px;
-  background-color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e2e8f0;
 }
 
+/* Mặt trước */
 .flashcard-front {
-  color: #1e293b;
+  background-color: #ffffff;
+  color: #0f172a;
 }
 
-/* Mặt sau được xoay sẵn 180 độ theo chiều ngang (Y) */
+/* Mặt sau - Xoay sẵn 180 độ */
 .flashcard-back {
   background-color: #f0f2ff;
   color: #4255ff;
