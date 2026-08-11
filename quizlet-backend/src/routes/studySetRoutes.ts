@@ -33,7 +33,7 @@ router.post('/:id/import-image', upload.single('file'), importFlashcardsFromImag
 
 // --- 3. ROUTES SỬA & XÓA TỪNG THẺ TỪ VỰNG ---
 router.put('/flashcards/:id', updateFlashcard);
-router.delete('/flashcards/:id', deleteFlashcard);
 router.delete('/flashcards/bulk-delete', deleteMultipleFlashcards);
+router.delete('/flashcards/:id', deleteFlashcard);
 
 export default router;
