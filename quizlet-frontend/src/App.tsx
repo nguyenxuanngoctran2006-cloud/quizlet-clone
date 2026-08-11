@@ -25,11 +25,10 @@ export interface QuizQuestion {
   options: string[];
 }
 
-// Interface phục vụ Chế độ Thuộc từ
 interface PracticeProgress {
   card: Flashcard;
-  termToDefPassed: boolean; // Đã trả lời đúng chiều Từ -> Nghĩa chưa
-  defToTermPassed: boolean; // Đã trả lời đúng chiều Nghĩa -> Từ chưa
+  termToDefPassed: boolean;
+  defToTermPassed: boolean;
 }
 
 function App() {
@@ -49,17 +48,29 @@ function App() {
   const [editTerm, setEditTerm] = useState<string>('');
   const [editDefinition, setEditDefinition] = useState<string>('');
 
+  // 🌟 1. STATES TÌM KIẾM (SEARCH)
+  const [searchSetQuery, setSearchSetQuery] = useState<string>('');
+  const [searchCardQuery, setSearchCardQuery] = useState<string>('');
+
+  // 🌟 2. STATE CHẾ ĐỘ XEM THẺ VIỆT -> ANH (LẬT MẶT)
+  const [isVietnameseFront, setIsVietnameseFront] = useState<boolean>(false);
+
+  // 🌟 3. STATES THÊM THẺ TỪ VỰNG MỚI BẰNG TAY
+  const [newTerm, setNewTerm] = useState<string>('');
+  const [newDefinition, setNewDefinition] = useState<string>('');
+  const [showAddCardForm, setShowAddCardForm] = useState<boolean>(false);
+
   // STATE CHỌN NHIỀU CÁC TỪ VỰNG ĐỂ XÓA
   const [selectedCardIds, setSelectedCardIds] = useState<number[]>([]);
 
-  // 🔊 STATE BẬT / TẮT ÂM THANH ĐỌC ĐÁP ÁN (Mặc định: BẬT)
+  // STATE BẬT / TẮT ÂM THANH
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(true);
 
   // --- STATES IMPORT & AI ---
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isAiProcessing, setIsAiProcessing] = useState<boolean>(false);
 
-  // --- STATES CHẾ ĐỘ QUIZ THƯỜNG ---
+  // --- STATES CHẾ ĐỘ QUIZ ---
   const [isQuizMode, setIsQuizMode] = useState<boolean>(false);
   const [quizDirection, setQuizDirection] = useState<'termToDef' | 'defToTerm'>('termToDef');
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
@@ -68,7 +79,7 @@ function App() {
   const [score, setScore] = useState<number>(0);
   const [quizFinished, setQuizFinished] = useState<boolean>(false);
 
-  // --- STATES CHẾ ĐỘ THUỘC TỪ (MASTERY MODE) ---
+  // --- STATES CHẾ ĐỘ THUỘC TỪ ---
   const [isMasteryMode, setIsMasteryMode] = useState<boolean>(false);
   const [masteryList, setMasteryList] = useState<PracticeProgress[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<{
@@ -103,7 +114,8 @@ function App() {
     setIsQuizMode(false);
     setIsMasteryMode(false);
     setCsvFile(null);
-    setSelectedCardIds([]); // Reset danh sách chọn khi chuyển bộ học phần
+    setSelectedCardIds([]);
+    setSearchCardQuery('');
     fetchCardDetails(set.id);
   };
 
@@ -125,6 +137,25 @@ function App() {
           fetchStudySets();
         });
     }
+  };
+
+  // 🌟 THÊM THẺ TỪ VỰNG MỚI BẰNG TAY
+  const handleAddNewCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTerm.trim() || !newDefinition.trim() || !selectedSet) {
+      return alert('Vui lòng nhập đầy đủ Từ vựng và Định nghĩa!');
+    }
+
+    axios.post(`${API_BASE_URL}/${selectedSet.id}/import`, {
+      flashcards: [{ term: newTerm.trim(), definition: newDefinition.trim() }]
+    })
+    .then(() => {
+      setNewTerm('');
+      setNewDefinition('');
+      setShowAddCardForm(false);
+      fetchCardDetails(selectedSet.id);
+    })
+    .catch((err) => console.error(err));
   };
 
   const handleEditSet = (e: React.MouseEvent, set: StudySet) => {
@@ -165,7 +196,7 @@ function App() {
     });
   };
 
-  // LOGIC CHỌN NHIỀU & XÓA HÀNG LOẠT
+  // CHỌN NHIỀU & XÓA HÀNG LOẠT
   const handleToggleSelectCard = (cardId: number) => {
     setSelectedCardIds((prev) =>
       prev.includes(cardId)
@@ -175,10 +206,10 @@ function App() {
   };
 
   const handleSelectAllCards = () => {
-    if (selectedCardIds.length === cards.length) {
+    if (selectedCardIds.length === filteredCards.length) {
       setSelectedCardIds([]);
     } else {
-      setSelectedCardIds(cards.map((c) => c.id));
+      setSelectedCardIds(filteredCards.map((c) => c.id));
     }
   };
 
@@ -201,7 +232,7 @@ function App() {
     }
   };
 
-  // --- LOGIC CHẾ ĐỘ THUỘC TỪ (MASTERY MODE) ---
+  // --- LOGIC CHẾ ĐỘ THUỘC TỪ ---
   const startMasteryMode = () => {
     if (cards.length < 4) {
       alert("Cần tối thiểu 4 từ vựng để bắt đầu Chế độ Thuộc từ!");
@@ -262,7 +293,6 @@ function App() {
   const handleMasterySubmit = (option: string) => {
     if (!currentQuestion || masteryAnswer !== null) return;
     
-    // 🔊 Chỉ đọc đáp án nếu Nút Âm Thanh đang BẬT
     if (isSoundEnabled) {
       handleSpeak(option);
     }
@@ -292,7 +322,7 @@ function App() {
     }, 1200);
   };
 
-  // --- LOGIC TRỘN BÀI KIỂM TRA THƯỜNG ---
+  // --- LOGIC BÀI KIỂM TRA THƯỜNG ---
   const handleStartQuiz = (direction: 'termToDef' | 'defToTerm') => {
     if (cards.length < 4) return alert("Cần tối thiểu 4 từ vựng!");
     setQuizDirection(direction);
@@ -324,7 +354,6 @@ function App() {
   const handleAnswerSubmit = (option: string) => {
     if (selectedAnswer !== null) return;
 
-    // 🔊 Chỉ đọc đáp án nếu Nút Âm Thanh đang BẬT
     if (isSoundEnabled) {
       handleSpeak(option);
     }
@@ -345,10 +374,10 @@ function App() {
     }, 1200);
   };
 
-  // --- PHÁT ÂM TTS TỐI ƯU MOBILE ---
+  // 🌟 3. PHÁT ÂM TIẾNG VIỆT & TIẾNG ANH CHUẨN XÁC TỐI ƯU
   const handleSpeak = (text: string) => {
     if (!('speechSynthesis' in window)) {
-      alert('Trình duyệt của bạn không hỗ trợ tính năng phát âm!');
+      alert('Trình duyệt của bạn không hỗ trợ phát âm!');
       return;
     }
 
@@ -356,17 +385,25 @@ function App() {
 
     const utterance = new SpeechSynthesisUtterance(text);
     
+    // Nhận diện ngôn ngữ thông minh
     const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/g.test(text);
-    utterance.lang = hasJapanese ? 'ja-JP' : 'en-US';
+    const hasVietnamese = /[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(text);
+
+    if (hasJapanese) {
+      utterance.lang = 'ja-JP';
+    } else if (hasVietnamese) {
+      utterance.lang = 'vi-VN'; // 🌟 Giọng đọc Tiếng Việt chuẩn
+    } else {
+      utterance.lang = 'en-US'; // Tiếng Anh
+    }
+
     utterance.rate = 0.9;
     utterance.volume = 1.0;
 
     const voices = window.speechSynthesis.getVoices();
     if (voices.length > 0) {
-      const targetLang = hasJapanese ? 'ja' : 'en';
-      const matchedVoice = voices.find(
-        (v) => v.lang.startsWith(targetLang) || v.lang.includes(targetLang)
-      );
+      const targetLang = utterance.lang.split('-')[0];
+      const matchedVoice = voices.find((v) => v.lang.startsWith(targetLang) || v.lang.includes(targetLang));
       if (matchedVoice) {
         utterance.voice = matchedVoice;
       }
@@ -436,10 +473,24 @@ function App() {
     });
   };
 
+  // 🌟 LỌC TÌM KIẾM BỘ HỌC PHẦN
+  const filteredStudySets = studySets.filter((s) =>
+    s.title.toLowerCase().includes(searchSetQuery.toLowerCase()) ||
+    (s.description && s.description.toLowerCase().includes(searchSetQuery.toLowerCase()))
+  );
+
+  // 🌟 LỌC TÌM KIẾM TỪ VỰNG TRONG BỘ
+  const filteredCards = cards.filter((c) =>
+    c.term.toLowerCase().includes(searchCardQuery.toLowerCase()) ||
+    c.definition.toLowerCase().includes(searchCardQuery.toLowerCase())
+  );
+
   const masteredCount = masteryList.filter((item) => item.termToDefPassed && item.defToTermPassed).length;
 
   // ==================== GIAO DIỆN XEM CHI TIẾT BỘ HỌC PHẦN ====================
   if (selectedSet) {
+    const currentCard = filteredCards[currentCardIndex];
+
     return (
       <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'Inter, system-ui, sans-serif' }}>
         <nav style={{ background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', padding: '16px 40px', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 20px rgba(79,70,229,0.15)' }}>
@@ -448,7 +499,6 @@ function App() {
           </span>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            {/* 🔊 NÚT BẬT / TẮT ÂM THANH ĐỌC ĐÁP ÁN */}
             <button
               onClick={() => setIsSoundEnabled(!isSoundEnabled)}
               style={{
@@ -469,13 +519,13 @@ function App() {
               {isSoundEnabled ? '🔊 Đọc đáp án: BẬT' : '🔇 Đọc đáp án: TẮT'}
             </button>
 
-            <span style={{ fontSize: '20px', fontWeight: '800' }}>Susu Quizlet ✨</span>
+            <span style={{ fontSize: '20px', fontWeight: '800' }}>Quizlet Master ✨</span>
           </div>
         </nav>
 
         <div style={{ maxWidth: '900px', margin: '30px auto', padding: '0 20px' }}>
           
-          {/* NẾU ĐANG TRONG CHẾ ĐỘ THUỘC TỪ (MASTERY MODE) */}
+          {/* CHẾ ĐỘ THUỘC TỪ */}
           {isMasteryMode ? (
             <div style={{ backgroundColor: '#fff', padding: '36px', borderRadius: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -621,55 +671,141 @@ function App() {
                 )}
               </div>
 
-              {/* Vùng Import File */}
-              <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <input 
-                  type="file" 
-                  accept=".csv, .txt, .pdf, .doc, .docx, .png, .jpg, .jpeg, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
-                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)} 
-                  style={{ fontSize: '14px' }} 
-                />
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button onClick={handleImportFile} style={{ backgroundColor: '#f1f5f9', color: '#334155', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>Import CSV/TXT</button>
-                  <button onClick={handleImportWithAI} disabled={isAiProcessing} style={{ backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
-                    {isAiProcessing ? '🤖 AI đang quét...' : '🤖 AI Import'}
-                  </button>
+              {/* VÙNG CHỨC NĂNG IMPORT AI & THÊM TỪ VỰNG TAY */}
+              <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '15px' }}>
+                  <input 
+                    type="file" 
+                    accept=".csv, .txt, .pdf, .doc, .docx, .png, .jpg, .jpeg, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
+                    onChange={(e) => setCsvFile(e.target.files?.[0] || null)} 
+                    style={{ fontSize: '14px' }} 
+                  />
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={handleImportFile} style={{ backgroundColor: '#f1f5f9', color: '#334155', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>Import CSV/TXT</button>
+                    <button onClick={handleImportWithAI} disabled={isAiProcessing} style={{ backgroundColor: '#8b5cf6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
+                      {isAiProcessing ? '🤖 AI đang quét...' : '🤖 AI Import'}
+                    </button>
+                    {/* 🌟 NÚT MỞ FORM THÊM TỪ MỚI */}
+                    <button onClick={() => setShowAddCardForm(!showAddCardForm)} style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
+                      {showAddCardForm ? 'Đóng' : '+ Thêm từ vựng mới'}
+                    </button>
+                  </div>
                 </div>
+
+                {/* 🌟 FORM THÊM THẺ TỪ VỰNG MỚI BẰNG TAY */}
+                {showAddCardForm && (
+                  <form onSubmit={handleAddNewCard} style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px dashed #cbd5e1', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <input 
+                      type="text" 
+                      placeholder="Từ vựng / Thuật ngữ (Ví dụ: Hello)" 
+                      value={newTerm} 
+                      onChange={(e) => setNewTerm(e.target.value)} 
+                      style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', minWidth: '200px' }} 
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Định nghĩa / Nghĩa Tiếng Việt (Ví dụ: Xin chào)" 
+                      value={newDefinition} 
+                      onChange={(e) => setNewDefinition(e.target.value)} 
+                      style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', minWidth: '200px' }} 
+                    />
+                    <button type="submit" style={{ backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
+                      Lưu từ này
+                    </button>
+                  </form>
+                )}
               </div>
 
-              {/* Khung Flashcard lật 3D */}
+              {/* 🌟 CÔNG CỤ CHUYỂN ĐỔI CHẾ ĐỘ XEM THẺ (ANH -> VIỆT / VIỆT -> ANH) */}
               {cards.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#64748b' }}>
+                    🎴 Thẻ {currentCardIndex + 1} / {filteredCards.length}
+                  </span>
+                  
+                  <button
+                    onClick={() => {
+                      setIsVietnameseFront(!isVietnameseFront);
+                      setIsFlipped(false);
+                    }}
+                    style={{
+                      backgroundColor: isVietnameseFront ? '#fef3c7' : '#e0e7ff',
+                      color: isVietnameseFront ? '#92400e' : '#3730a3',
+                      border: 'none',
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      fontSize: '13px'
+                    }}
+                  >
+                    {isVietnameseFront ? '🔄 Đang xem: Tiếng Việt ➔ Tiếng Anh' : '🔄 Đang xem: Tiếng Anh ➔ Tiếng Việt'}
+                  </button>
+                </div>
+              )}
+
+              {/* KHUNG FLASHCARD LẬT 3D */}
+              {filteredCards.length > 0 && currentCard && (
                 <div>
                   <div className="flashcard-container" onClick={() => setIsFlipped(!isFlipped)}>
                     <div className={`flashcard-inner ${isFlipped ? 'flipped' : ''}`}>
+                      
+                      {/* MẶT TRƯỚC BÀI HỌC */}
                       <div className="flashcard-front" style={{ position: 'relative' }}>
-                        <button onClick={(e) => { e.stopPropagation(); handleSpeak(cards[currentCardIndex]?.term || ''); }} style={{ position: 'absolute', top: '20px', right: '25px', background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer' }}>🔊</button>
-                        {cards[currentCardIndex]?.term}
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            handleSpeak(isVietnameseFront ? currentCard.definition : currentCard.term); 
+                          }} 
+                          style={{ position: 'absolute', top: '20px', right: '25px', background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer' }}
+                        >
+                          🔊
+                        </button>
+                        {isVietnameseFront ? currentCard.definition : currentCard.term}
                       </div>
-                      <div className="flashcard-back">{cards[currentCardIndex]?.definition}</div>
+
+                      {/* MẶT SAU BÀI HỌC */}
+                      <div className="flashcard-back" style={{ position: 'relative' }}>
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            handleSpeak(isVietnameseFront ? currentCard.term : currentCard.definition); 
+                          }} 
+                          style={{ position: 'absolute', top: '20px', right: '25px', background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer' }}
+                        >
+                          🔊
+                        </button>
+                        {isVietnameseFront ? currentCard.term : currentCard.definition}
+                      </div>
+
                     </div>
                   </div>
 
                   <div style={{ marginTop: '25px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px' }}>
                     <button disabled={currentCardIndex === 0} onClick={() => { setIsFlipped(false); setCurrentCardIndex(prev => prev - 1); }} style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: '700', cursor: 'pointer' }}>◀ Trước</button>
-                    <span style={{ fontWeight: '800', color: '#475569' }}>{currentCardIndex + 1} / {cards.length}</span>
-                    <button disabled={currentCardIndex === cards.length - 1} onClick={() => { setIsFlipped(false); setCurrentCardIndex(prev => prev + 1); }} style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: '700', cursor: 'pointer' }}>Sau ▶</button>
+                    <span style={{ fontWeight: '800', color: '#475569' }}>{currentCardIndex + 1} / {filteredCards.length}</span>
+                    <button disabled={currentCardIndex === filteredCards.length - 1} onClick={() => { setIsFlipped(false); setCurrentCardIndex(prev => prev + 1); }} style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: '700', cursor: 'pointer' }}>Sau ▶</button>
                   </div>
-                  <p style={{ color: '#94a3b8', fontSize: '13px', textAlign: 'center', marginTop: '12px' }}>
-                    💡 Mẹo: Nhấn <b>Space</b> để lật thẻ, dùng <b>Mũi tên Trái/Phải</b> để chuyển bài nhanh.
-                  </p>
                 </div>
               )}
 
-              {/* DANH SÁCH TỪ VỰNG CÓ CHẾ ĐỘ CHỌN NHIỀU & XÓA HÀNG LOẠT */}
+              {/* 🌟 DANH SÁCH TỪ VỰNG KÈM BẢNG TÌM KIẾM TỪ VỰNG */}
               <div style={{ marginTop: '50px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
                   <h3 style={{ fontSize: '20px', fontWeight: '800', color: '#1e293b', margin: 0 }}>
-                    Danh sách từ vựng ({cards.length})
+                    Danh sách từ vựng ({filteredCards.length})
                   </h3>
 
-                  {/* Nút Chọn tất cả & Xóa đã chọn */}
-                  {cards.length > 0 && (
+                  {/* 🌟 Ô TÌM KIẾM TỪ VỰNG TRONG BỘ */}
+                  <input 
+                    type="text" 
+                    placeholder="🔍 Tìm từ vựng hoặc nghĩa..." 
+                    value={searchCardQuery} 
+                    onChange={(e) => { setSearchCardQuery(e.target.value); setCurrentCardIndex(0); }} 
+                    style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '240px' }} 
+                  />
+
+                  {filteredCards.length > 0 && (
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       <button
                         onClick={handleSelectAllCards}
@@ -684,7 +820,7 @@ function App() {
                           fontSize: '14px'
                         }}
                       >
-                        {selectedCardIds.length === cards.length ? '⬜ Bỏ chọn tất cả' : '☑️ Chọn tất cả'}
+                        {selectedCardIds.length === filteredCards.length ? '⬜ Bỏ chọn tất cả' : '☑️ Chọn tất cả'}
                       </button>
 
                       {selectedCardIds.length > 0 && (
@@ -710,7 +846,7 @@ function App() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {cards.map((card) => {
+                  {filteredCards.map((card) => {
                     const isSelected = selectedCardIds.includes(card.id);
 
                     return (
@@ -738,7 +874,6 @@ function App() {
                         ) : (
                           <>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
-                              {/* Checkbox chọn từ */}
                               <input
                                 type="checkbox"
                                 checked={isSelected}
@@ -746,8 +881,12 @@ function App() {
                                 style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
                               />
 
-                              <button onClick={() => handleSpeak(card.term)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>🔊</button>
+                              {/* NÚT ĐỌC TIẾNG ANH / NHẬT */}
+                              <button onClick={() => handleSpeak(card.term)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }} title="Nghe từ chính">🔊</button>
                               <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', width: '200px' }}>{card.term}</span>
+                              
+                              {/* NÚT ĐỌC TIẾNG VIỆT */}
+                              <button onClick={() => handleSpeak(card.definition)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }} title="Nghe nghĩa Tiếng Việt">🔊</button>
                               <span style={{ color: '#64748b', fontSize: '16px' }}>{card.definition}</span>
                             </div>
 
@@ -778,8 +917,18 @@ function App() {
       </nav>
 
       <div style={{ maxWidth: '1000px', margin: '40px auto', padding: '0 20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '800', color: '#0f172a', margin: 0 }}>Bộ học phần của bạn</h2>
+          
+          {/* 🌟 Ô TÌM KIẾM BỘ HỌC PHẦN */}
+          <input 
+            type="text" 
+            placeholder="🔍 Tìm kiếm bộ học phần..." 
+            value={searchSetQuery} 
+            onChange={(e) => setSearchSetQuery(e.target.value)} 
+            style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '14px', width: '280px' }} 
+          />
+
           <button onClick={() => { setShowForm(!showForm); setEditingSet(null); setTitle(''); setDescription(''); }} style={{ background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.25)' }}>
             {showForm ? 'Đóng Form' : '+ Tạo bộ học phần mới'}
           </button>
@@ -800,13 +949,15 @@ function App() {
         {/* Danh sách thẻ Học Phần trên trang chủ */}
         {loading ? (
           <p>Đang tải dữ liệu...</p>
-        ) : studySets.length === 0 ? (
+        ) : filteredStudySets.length === 0 ? (
           <div style={{ backgroundColor: '#fff', padding: '40px', borderRadius: '12px', textAlign: 'center', border: '2px dashed #dbdde2' }}>
-            <p style={{ color: '#686c7d', fontSize: '16px', margin: 0 }}>Chưa có bộ học phần nào. Bạn hãy bấm tạo mới nhé!</p>
+            <p style={{ color: '#686c7d', fontSize: '16px', margin: 0 }}>
+              {searchSetQuery ? 'Không tìm thấy bộ học phần nào phù hợp!' : 'Chưa có bộ học phần nào. Bạn hãy bấm tạo mới nhé!'}
+            </p>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
-            {studySets.map((set) => (
+            {filteredStudySets.map((set) => (
               <div
                 key={set.id}
                 onClick={() => handleSelectSet(set)}
@@ -839,7 +990,6 @@ function App() {
 
 export default App;
 
-// HÀM NGOÀI PHỤC VỤ UNIT TEST
 export const generateQuiz = (flashcards: Flashcard[]): QuizQuestion[] => {
   if (flashcards.length < 4) return [];
   return flashcards.map((currentCard) => {
